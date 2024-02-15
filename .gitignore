@@ -1,2 +1,5 @@
 /target
 data.txt
+flamegraph.svg
+perf.data*
+ref_impl

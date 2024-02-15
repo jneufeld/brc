@@ -5,27 +5,28 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 const INP_PATH: &str = "data.txt";
 
 fn main() {
-    //data
+    // data
     let args = env::args().skip(1).next();
     let path = args.unwrap_or(INP_PATH.to_string());
     let data = fs::read_to_string(path).unwrap();
 
-    //map
+    // map
     let maps: Vec<_> = partition(&data)
         .par_iter()
         .map(|(start, end)| compute((*start, *end), &data))
         .collect();
 
-    //reduce
+    // reduce
     let mut answer = HashMap::new();
     for m in maps {
-        merge_maps(&mut answer, &m);
+        reduce(&mut answer, &m);
     }
 
-    //print
+    // print
     print_result(&answer);
 }
 
+/// Use the number of CPUs to scan and partition the input data.
 fn partition(data: &str) -> Vec<(usize, usize)> {
     let cpus = thread::available_parallelism().unwrap().get();
     let size = data.len() / cpus;
@@ -46,21 +47,22 @@ fn partition(data: &str) -> Vec<(usize, usize)> {
     parts
 }
 
+/// Scan chunk of input and record stats (i.e. map).
 fn compute((start, end): (usize, usize), data: &str) -> HashMap<&str, Stats> {
-    make_map(data[start..=end].lines())
-}
+    let mut map: HashMap<&str, Stats> = HashMap::new();
+    let lines = data[start..=end].lines();
 
-fn make_map<'a>(i: impl Iterator<Item = &'a str>) -> HashMap<&'a str, Stats> {
-    let mut m: HashMap<&str, Stats> = HashMap::new();
-    for line in i {
+    for line in lines {
         let (name, temp) = line.split_once(';').unwrap();
         let temp = temp.parse::<f64>().unwrap();
-        m.entry(name).or_default().add(temp);
+        map.entry(name).or_default().add(temp);
     }
-    m
+
+    map
 }
 
-fn merge_maps<'a>(a: &mut HashMap<&'a str, Stats>, b: &HashMap<&'a str, Stats>) {
+/// Merge the second map into the first (i.e. reduce).
+fn reduce<'a>(a: &mut HashMap<&'a str, Stats>, b: &HashMap<&'a str, Stats>) {
     for (k, v) in b {
         a.entry(k).or_default().fold(v);
     }
@@ -69,11 +71,18 @@ fn merge_maps<'a>(a: &mut HashMap<&'a str, Stats>, b: &HashMap<&'a str, Stats>) 
 fn print_result(answer: &HashMap<&str, Stats>) {
     let mut names: Vec<_> = answer.keys().collect();
     names.sort();
+    let mut first = true;
+
     print!("{{");
     for n in names {
-        print!("{n}={},", answer[n]);
+        if first {
+            print!("{n}={}", answer[n]);
+            first = false;
+        } else {
+            print!(", {n}={}", answer[n]);
+        }
     }
-    print!("}}");
+    println!("}}");
 }
 
 struct Stats {
