@@ -1,41 +1,49 @@
 use std::{cmp, collections::HashMap, env, fmt::Display, fs, thread};
 
+use bstr::{BStr, ByteSlice};
+use memchr::memchr;
+use memmap2::Mmap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 const INP_PATH: &str = "data.txt";
 
+/// Reads input and uses map/reduce pattern to compute the result. Input is
+/// memory mapped to reduce copying. For more detailed justication of
+/// dependencies please see comments in `Cargo.toml`.
 fn main() {
-    // data
-    let args = env::args().skip(1).next();
+    // Prepare data
+    let args = env::args().nth(1);
     let path = args.unwrap_or(INP_PATH.to_string());
-    let data = fs::read_to_string(path).unwrap();
+    let file = fs::File::open(path).unwrap();
+    let mmap = unsafe { Mmap::map(&file).unwrap() };
 
-    // map
-    let maps: Vec<_> = partition(&data)
+    // Map
+    let maps: Vec<_> = partition(&mmap)
         .par_iter()
-        .map(|(start, end)| compute((*start, *end), &data))
+        .map(|(start, end)| compute_part((*start, *end), &mmap))
         .collect();
 
-    // reduce
+    // Reduce
     let mut answer = HashMap::new();
     for m in maps {
         reduce(&mut answer, &m);
     }
 
-    // print
+    // Print
     print_result(&answer);
 }
 
 /// Use the number of CPUs to scan and partition the input data.
-fn partition(data: &str) -> Vec<(usize, usize)> {
+fn partition(data: &[u8]) -> Vec<(usize, usize)> {
     let cpus = thread::available_parallelism().unwrap().get();
     let size = data.len() / cpus;
+
     let mut parts = vec![];
     let mut start = 0;
 
     for _ in 0..cpus {
         let end = cmp::min(start + size, data.len() - 1);
-        let end = match &data[end..].find('\n') {
+        let end = match memchr(b'\n', &data[end..]) {
             Some(n) => end + n,
             None => end,
         };
@@ -47,28 +55,31 @@ fn partition(data: &str) -> Vec<(usize, usize)> {
     parts
 }
 
-/// Scan chunk of input and record stats (i.e. map).
-fn compute((start, end): (usize, usize), data: &str) -> HashMap<&str, Stats> {
-    let mut map: HashMap<&str, Stats> = HashMap::new();
-    let lines = data[start..=end].lines();
+/// Scan chunk of input and record stats (i.e. map operation).
+fn compute_part((start, end): (usize, usize), data: &[u8]) -> HashMap<&BStr, Stats> {
+    compute(&mut data[start..=end].lines())
+}
 
-    for line in lines {
-        let (name, temp) = line.split_once(';').unwrap();
-        let temp = temp.parse::<f64>().unwrap();
-        map.entry(name).or_default().add(temp);
+fn compute<'a>(itr: impl Iterator<Item = &'a [u8]>) -> HashMap<&'a BStr, Stats> {
+    let mut map: HashMap<&'a BStr, Stats> = HashMap::new();
+
+    for line in itr {
+        let (name, temp) = line.split_once_str(";").unwrap();
+        let temp = fast_float::parse(temp).unwrap();
+        map.entry(name.into()).or_default().add(temp);
     }
 
     map
 }
 
-/// Merge the second map into the first (i.e. reduce).
-fn reduce<'a>(a: &mut HashMap<&'a str, Stats>, b: &HashMap<&'a str, Stats>) {
+/// Merge the second map into the first (i.e. reduce operation).
+fn reduce<'a>(a: &mut HashMap<&'a BStr, Stats>, b: &HashMap<&'a BStr, Stats>) {
     for (k, v) in b {
         a.entry(k).or_default().fold(v);
     }
 }
 
-fn print_result(answer: &HashMap<&str, Stats>) {
+fn print_result(answer: &HashMap<&BStr, Stats>) {
     let mut names: Vec<_> = answer.keys().collect();
     names.sort();
     let mut first = true;

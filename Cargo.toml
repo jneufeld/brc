@@ -4,6 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Faster string handling than `std`. This library makes it easier to treat
+# strings as byte slices.
+bstr = "1.9"
+
+# Easier parsing -- I haven't tested performance.
+fast-float = "0.2"
+
+# Easier byte searching -- I haven't tested performance.
+memchr = "2.7"
+
+# Memory mapping to reduce copies.
+memmap2 = "0.9"
+
+# Parallel computation.
 rayon = "1.8"
 
 [profile.release]
