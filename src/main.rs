@@ -1,15 +1,17 @@
-use std::{cmp, collections::HashMap, env, fmt::Display, fs, thread};
+use std::{cmp, env, fmt::Display, fs, thread};
 
+// For more detailed justication of dependencies please see comments in
+// `Cargo.toml`.
 use bstr::{BStr, ByteSlice};
 use memchr::memchr;
 use memmap2::Mmap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rustc_hash::FxHashMap;
 
 const INP_PATH: &str = "data.txt";
 
 /// Reads input and uses map/reduce pattern to compute the result. Input is
-/// memory mapped to reduce copying. For more detailed justication of
-/// dependencies please see comments in `Cargo.toml`.
+/// memory mapped to reduce copying.
 fn main() {
     // Prepare data
     let args = env::args().nth(1);
@@ -20,11 +22,11 @@ fn main() {
     // Map
     let maps: Vec<_> = partition(&mmap)
         .par_iter()
-        .map(|(start, end)| compute_part((*start, *end), &mmap))
+        .map(|(start, end)| compute((*start, *end), &mmap))
         .collect();
 
     // Reduce
-    let mut answer = HashMap::new();
+    let mut answer = FxHashMap::default();
     for m in maps {
         reduce(&mut answer, &m);
     }
@@ -48,6 +50,8 @@ fn partition(data: &[u8]) -> Vec<(usize, usize)> {
             None => end,
         };
 
+        // TODO spawn compute thread here? The chunk of memory just scanned is
+        // ready.
         parts.push((start, end));
         start = end + 1;
     }
@@ -56,14 +60,10 @@ fn partition(data: &[u8]) -> Vec<(usize, usize)> {
 }
 
 /// Scan chunk of input and record stats (i.e. map operation).
-fn compute_part((start, end): (usize, usize), data: &[u8]) -> HashMap<&BStr, Stats> {
-    compute(&mut data[start..=end].lines())
-}
+fn compute<'a>((start, end): (usize, usize), data: &'a [u8]) -> FxHashMap<&'a BStr, Stats> {
+    let mut map: FxHashMap<&'a BStr, Stats> = FxHashMap::default();
 
-fn compute<'a>(itr: impl Iterator<Item = &'a [u8]>) -> HashMap<&'a BStr, Stats> {
-    let mut map: HashMap<&'a BStr, Stats> = HashMap::new();
-
-    for line in itr {
+    for line in &mut data[start..=end].lines() {
         let (name, temp) = line.split_once_str(";").unwrap();
         let temp = fast_float::parse(temp).unwrap();
         map.entry(name.into()).or_default().add(temp);
@@ -73,13 +73,13 @@ fn compute<'a>(itr: impl Iterator<Item = &'a [u8]>) -> HashMap<&'a BStr, Stats> 
 }
 
 /// Merge the second map into the first (i.e. reduce operation).
-fn reduce<'a>(a: &mut HashMap<&'a BStr, Stats>, b: &HashMap<&'a BStr, Stats>) {
-    for (k, v) in b {
-        a.entry(k).or_default().fold(v);
+fn reduce<'a>(a: &mut FxHashMap<&'a BStr, Stats>, b: &FxHashMap<&'a BStr, Stats>) {
+    for (name, temp) in b {
+        a.entry(name).or_default().fold(temp);
     }
 }
 
-fn print_result(answer: &HashMap<&BStr, Stats>) {
+fn print_result(answer: &FxHashMap<&BStr, Stats>) {
     let mut names: Vec<_> = answer.keys().collect();
     names.sort();
     let mut first = true;

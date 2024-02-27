@@ -11,6 +11,7 @@ dependencies = [
  "memchr",
  "memmap2",
  "rayon",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -125,6 +126,12 @@ name = "regex-automata"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5bb987efffd3c6d0d8f5f89510bb458559eab11e4f869acb20bf845e016259cd"
+
+[[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "serde"
